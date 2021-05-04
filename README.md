@@ -6,7 +6,7 @@ Modernized version of the thread pool used in a [internship project in 2015](htt
 
 - why thread pool? 
     1. the original project was for running a hospital signup server on an embedded system. It has limited resources. A number of the maximum concurrent thread must be set.
-    2. In the meantime, having a few readily-created thread waiting for incoming jobs instead of creating a new thread for every connection is beneficial.
+    2. In the meantime, having a few thread stand-by for incoming jobs saves the overhead creating new threads for every connection .
 
 ## Design
 
