@@ -5,6 +5,7 @@
 // ------------------------------ Types ---------------------------------------
 typedef void (*task_fun_t)(void *);
 
+// TODO use tagged union for pool with different arg types
 enum ARG_TYPE { HEAP, STACK };
 
 typedef struct arg_ {
@@ -35,6 +36,7 @@ typedef struct thread_pool {
   size_t min_thread_num;
 
   // circle list as task queue
+  int heap_args;
   task_t *task_queue;
   size_t max_queue_size;
   size_t queue_size;
@@ -46,8 +48,8 @@ typedef struct thread_pool {
 } thread_pool_t;
 
 // --------------------------- pool routines ----------------------------------
-thread_pool_t *thread_pool_create(size_t max_thread_num, size_t min_thread_num,
-                                  size_t max_task_num);
+thread_pool_t *thread_pool_create(size_t thread_num, size_t max_task_num,
+                                  int heap_args);
 int thread_pool_submit(thread_pool_t *pool, task_fun_t func, void *arg);
 int thread_pool_destroy(thread_pool_t *pool);
 

@@ -41,6 +41,8 @@ static void *pool_worker(void *arg) {
 
     pool->head = (pool->head + 1) % pool->max_queue_size;
     pool->queue_size -= 1;
+    printf("thread id: %ld, remaining tasks: %ld\n",
+           (unsigned long int)(pthread_self()), pool->queue_size);
     pthread_cond_broadcast(&pool->queue_not_full);
     pthread_mutex_unlock(&pool->queue_lock);
 
@@ -49,8 +51,11 @@ static void *pool_worker(void *arg) {
     pool->working_thread_num += 1;
     pthread_mutex_unlock(&pool->working_lock);
 
+    // puts("1\n");
     (*(task.func))(task.arg);
-    free(task.arg);
+    if (pool->heap_args)
+      free(task.arg);
+    // puts("2\n");
 
     pthread_mutex_lock(&pool->working_lock);
     pool->working_thread_num -= 1;
@@ -87,8 +92,8 @@ static int thread_pool_free(thread_pool_t *pool) {
   return 0;
 }
 
-thread_pool_t *thread_pool_create(size_t max_thread_num, size_t min_thread_num,
-                                  size_t max_queue_size) {
+thread_pool_t *thread_pool_create(size_t thread_num, size_t max_queue_size,
+                                  int heap_args) {
   thread_pool_t *pool = NULL;
   int i;
   do {
@@ -96,8 +101,9 @@ thread_pool_t *thread_pool_create(size_t max_thread_num, size_t min_thread_num,
       puts("Error allocating pool\n");
       break;
     }
-    pool->max_thread_num = max_thread_num;
-    pool->min_thread_num = min_thread_num;
+    pool->max_thread_num = thread_num;
+    // pool->min_thread_num = min_thread_num;
+    pool->heap_args = heap_args;
     pool->queue_size = 0;
     pool->max_queue_size = max_queue_size;
     pool->head = 0;
@@ -105,7 +111,8 @@ thread_pool_t *thread_pool_create(size_t max_thread_num, size_t min_thread_num,
     pool->shutdown = 0;
     pool->working_thread_num = 0;
 
-    pool->workers = calloc(pool->max_thread_num, sizeof(pthread_t));
+    pool->workers =
+        (pthread_t *)calloc(pool->max_thread_num, sizeof(pthread_t));
     if (pool->workers == NULL) {
       puts("Error allocating pool->workers\n");
       break;
@@ -125,12 +132,13 @@ thread_pool_t *thread_pool_create(size_t max_thread_num, size_t min_thread_num,
     }
 
     for (i = 0; i < pool->max_thread_num; ++i) {
-      pthread_create(&pool->workers[i], NULL, pool_worker, (void *)pool);
+      pthread_create(&(pool->workers[i]), NULL, &pool_worker, (void *)pool);
+      printf("thread %d created\n", i);
     }
     // pthread_create(&pool->admin, NULL, pool_admin, (void *)pool);
     return pool;
 
-  } while (0); // use do while as goto
+  } while (0); // mimic goto with do ... while(0)
 
   thread_pool_free(pool);
   return NULL;
@@ -148,10 +156,11 @@ int thread_pool_submit(thread_pool_t *pool, task_fun_t func, void *arg) {
   pool->task_queue[pool->tail].func = func;
   pool->task_queue[pool->tail].arg = arg;
   pool->queue_size += 1;
-  pool->tail = (pool->tail + 1) % pool->queue_size;
+  pool->tail = (pool->tail + 1) % pool->max_queue_size;
 
   pthread_cond_signal(&pool->queue_not_empty);
   pthread_mutex_unlock(&pool->queue_lock);
+
   return 0;
 }
 
@@ -165,17 +174,19 @@ int thread_pool_destroy(thread_pool_t *pool) {
   int i = 0;
   for (i = 0; i < pool->max_thread_num; i++) {
     pthread_join(pool->workers[i], NULL);
+    // printf("thread %d joined\n", i);
   }
 
-  for (i = 0; i < pool->max_queue_size; i++) {
-    if (pool->task_queue[i].arg != NULL) {
-      // all the worker threads are joined. If some task in queue still
-      // exists, they are not used by any thread.
-      // This is still unsafe because the user might submit a task and arg just
-      // on the stack.
-      // A boolean arg `heap_arg` specifying the type of arg passed is
-      // required when creating the pool
-      free(pool->task_queue[i].arg);
+  if (pool->heap_args) {
+    for (i = 0; i < pool->max_queue_size; i++) {
+      if (pool->task_queue[i].arg != NULL) {
+        // all the worker threads are joined. If some task in queue still
+        // exists, they are not used by any thread.
+        // This is still unsafe because the user might submit a task and arg
+        // just on the stack. A boolean arg `heap_arg` specifying the type of
+        // arg passed is required when creating the pool
+        free(pool->task_queue[i].arg);
+      }
     }
   }
   thread_pool_free(pool);
